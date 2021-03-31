@@ -34,7 +34,13 @@ struct Opt {
 enum Command {
     /// Install a new innernet config.
     #[structopt(alias = "redeem")]
-    Install { config: PathBuf },
+    Install {
+        /// Do not ask questions, use defaults
+        #[structopt(long)]
+        batch: bool,
+
+        config: PathBuf,
+    },
 
     /// Enumerate all innernet connections.
     #[structopt(alias = "list")]
@@ -144,15 +150,19 @@ fn update_hosts_file(interface: &str, peers: &Vec<Peer>) -> Result<(), Error> {
     Ok(())
 }
 
-fn install(invite: &Path) -> Result<(), Error> {
+fn install(batch: bool, invite: &Path) -> Result<(), Error> {
     let theme = ColorfulTheme::default();
     shared::ensure_dirs_exist(&[*CLIENT_CONFIG_PATH])?;
     let mut config = InterfaceConfig::from_file(invite)?;
 
-    let iface = Input::with_theme(&theme)
-        .with_prompt("Interface name")
-        .default(config.interface.network_name.clone())
-        .interact()?;
+    let iface = if batch {
+        config.interface.network_name.clone()
+    } else {
+        Input::with_theme(&theme)
+            .with_prompt("Interface name")
+            .default(config.interface.network_name.clone())
+            .interact()?
+    };
 
     let target_conf = CLIENT_CONFIG_PATH.join(&iface).with_extension("conf");
     if target_conf.exists() {
@@ -207,13 +217,14 @@ fn install(invite: &Path) -> Result<(), Error> {
 
     fetch(&iface, false)?;
 
-    if Confirm::with_theme(&theme)
-        .with_prompt(&format!(
-            "Delete invitation file \"{}\" now? (It's no longer needed)",
-            invite.to_string_lossy().yellow()
-        ))
-        .default(true)
-        .interact()?
+    if batch
+        || Confirm::with_theme(&theme)
+            .with_prompt(&format!(
+                "Delete invitation file \"{}\" now? (It's no longer needed)",
+                invite.to_string_lossy().yellow()
+            ))
+            .default(true)
+            .interact()?
     {
         std::fs::remove_file(invite).with_path(invite)?;
     }
@@ -724,7 +735,7 @@ fn run(opt: Opt) -> Result<(), Error> {
     });
 
     match command {
-        Command::Install { config } => install(&config)?,
+        Command::Install { batch, config } => install(batch, &config)?,
         Command::Show {
             short,
             tree,
